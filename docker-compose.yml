@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: n8n-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-n8n}
+      POSTGRES_USER: ${PGUSER:-n8n}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-n8npassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-n8n} -d ${PGDATABASE:-n8n}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: n8n-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  n8n-primary:
+    image: n8nio/n8n:latest
+    container_name: n8n-primary
+    restart: unless-stopped
+    environment:
+      # Database
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_DATABASE: ${PGDATABASE:-n8n}
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_USER: ${PGUSER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${PGPASSWORD:-n8npassword}
+      
+      # Redis Queue
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      EXECUTIONS_MODE: queue
+      
+      # Security
+      N8N_ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key-here}
+      
+      # n8n Configuration
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+      
+      # Package/Module Access - Allow axios and all external/builtin modules
+      NODE_FUNCTION_ALLOW_EXTERNAL: ${NODE_FUNCTION_ALLOW_EXTERNAL:-*}
+      NODE_FUNCTION_ALLOW_BUILTIN: ${NODE_FUNCTION_ALLOW_BUILTIN:-*}
+      
+      # Logging
+      N8N_LOG_LEVEL: info
+      
+      # Enable metrics
+      N8N_METRICS: true
+      
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: n8n start
+
+  n8n-worker-1:
+    image: n8nio/n8n:latest
+    container_name: n8n-worker-1
+    restart: unless-stopped
+    environment:
+      # Database
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_DATABASE: ${PGDATABASE:-n8n}
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_USER: ${PGUSER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${PGPASSWORD:-n8npassword}
+      
+      # Redis Queue
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      EXECUTIONS_MODE: queue
+      
+      # Security
+      N8N_ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key-here}
+      
+      # Package/Module Access - Allow axios and all external/builtin modules
+      NODE_FUNCTION_ALLOW_EXTERNAL: ${NODE_FUNCTION_ALLOW_EXTERNAL:-*}
+      NODE_FUNCTION_ALLOW_BUILTIN: ${NODE_FUNCTION_ALLOW_BUILTIN:-*}
+      
+      # Worker Configuration
+      N8N_LOG_LEVEL: info
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      n8n-primary:
+        condition: service_started
+    command: n8n worker
+
+  n8n-worker-2:
+    image: n8nio/n8n:latest
+    container_name: n8n-worker-2
+    restart: unless-stopped
+    environment:
+      # Database
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_DATABASE: ${PGDATABASE:-n8n}
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_USER: ${PGUSER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${PGPASSWORD:-n8npassword}
+      
+      # Redis Queue
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      EXECUTIONS_MODE: queue
+      
+      # Security
+      N8N_ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key-here}
+      
+      # Package/Module Access - Allow axios and all external/builtin modules
+      NODE_FUNCTION_ALLOW_EXTERNAL: ${NODE_FUNCTION_ALLOW_EXTERNAL:-*}
+      NODE_FUNCTION_ALLOW_BUILTIN: ${NODE_FUNCTION_ALLOW_BUILTIN:-*}
+      
+      # Worker Configuration
+      N8N_LOG_LEVEL: info
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      n8n-primary:
+        condition: service_started
+    command: n8n worker
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  n8n_data:
+    driver: local
+  n8n_files:
+    driver: local
+
+networks:
+  default:
+    name: n8n-network 
